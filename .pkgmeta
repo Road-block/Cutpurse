@@ -1,0 +1,7 @@
+package-as: Cutpurse
+enable-nolib-creation: no
+
+ignore:
+  - .gitignore
+  - .pkgmeta
+  - README.md

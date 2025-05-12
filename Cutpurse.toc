@@ -1,0 +1,11 @@
+## Interface: 50500,40402,11507
+## Title: Cut|T132320:16|tPurse|T133644:16|t
+## Notes: Tracks your gains from Pick Pocketing and helps you find erm... donors
+## IconTexture: 133644
+## Author: Roadblock
+## Version: 0.5
+## SavedVariablesPerCharacter: Cutpurse_DBPC
+## SavedVariables: Cutpurse_DB
+
+core.lua
+
