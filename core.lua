@@ -17,6 +17,7 @@ addon.slots = {}
 local After, Ticker, IsEventValid = C_Timer.After, C_Timer.NewTicker, C_EventUtils.IsEventValid
 local _, ROGUE, PICKPOCKET, INTERVAL = nil, 4, 921, 0.5
 local PPTEXTURE = C_Spell.GetSpellTexture(PICKPOCKET)
+local PPNAME = C_Spell.GetSpellName(PICKPOCKET)
 local MONEY_LABEL = string.format("%sSpoils:",CreateTextureMarkup(PPTEXTURE, 64, 64, 16, 16, 0, 1, 0, 1))
 local VENDOR_LABEL = "%s("..CreateTextureMarkup("Interface/CURSOR/Pickup", 32, 32, 16, 16, 0, 1, 0, 1).."%s)"
 local GPH_LABEL = string.format("%s%s",CreateTextureMarkup("Interface/Timer/Challenges-Logo", 256, 256, 16, 16, 0.2, 0.8, 0.2, 0.8),"GPH:")
@@ -27,6 +28,18 @@ local defaults = {
   money = 0,
   vendor = 0,
   loot = {},
+  showIcon = true,
+  iconSize = 20,
+  anchorFrom = "TOPRIGHT",
+  anchorTo = "BOTTOMLEFT",
+  offsetX = -5,
+  offsetY = -5,
+  unitTooltip = true,
+  lootMessage = true,
+  spell = true,
+  spellCoin = true,
+  spellVendor = true,
+  spellGPH = true,
 }
 local defaultsAccount = {
   pickable = {},
@@ -51,6 +64,8 @@ end
 
 local function getGPH()
   if addon.lastPick and addon.firstPick then
+    local opt = Cutpurse_DBPC
+    if not opt.spellGPH then return end
     local now = GetServerTime()
     local sessionDuration = addon.lastPick[1] - addon.firstPick[1]
     local moneyGain = addon.lastPick[2] - addon.firstPick[2]
@@ -59,10 +74,10 @@ local function getGPH()
     if not sessionDuration or sessionDuration <= 0 then
       return
     end
-    if moneyGain > 0 then
+    if moneyGain > 0 and opt.spellCoin then
       gphCoin = moneyGain*3600/sessionDuration
     end
-    if moneyGain > 0 or vendorGain > 0 then
+    if (moneyGain > 0 or vendorGain > 0) and opt.spellVendor then
       gphAll = (moneyGain+vendorGain)*3600/sessionDuration
     end
     if now - addon.lastPick[1] < 300 then
@@ -107,7 +122,7 @@ timeFormatter:SetStripIntervalWhitespace(true)
 local function formatDelta(delta)
   local timeStr = timeFormatter:Format(delta)
   local coloredCD
-  if delta <= 180+30 then -- less than 3.5mins red
+  if delta <= 210 then -- less than 3.5mins red
     coloredCD = RED_FONT_COLOR:WrapTextInColorCode(timeStr)
   elseif delta <= 480 then -- less than 8mins yellow
     coloredCD = YELLOW_FONT_COLOR:WrapTextInColorCode(timeStr)
@@ -123,21 +138,21 @@ local function getNameplateIcon(nameplate)
   if not nameplate then return end
   if nameplate._icon then return nameplate._icon end
   local icon = CreateFrame("Frame", nil, nameplate)
-  icon:SetSize(20,20)
+  local opt = Cutpurse_DBPC
+  icon:SetSize(opt.iconSize,opt.iconSize)
   icon.texture = icon:CreateTexture(nil,"BORDER")
   icon.texture:SetAllPoints(icon)
   icon.texture:SetTexture(PPTEXTURE)
   icon.border = icon:CreateTexture(nil,"ARTWORK")
-  --icon.border:SetAllPoints(icon)
-  icon.border:SetPoint("TOPLEFT",icon,"TOPLEFT",-2,2)
-  icon.border:SetPoint("BOTTOMRIGHT",icon,"BOTTOMRIGHT",2,-2)
+  icon.border:SetPoint("TOPLEFT",icon,"TOPLEFT",-1,1)
+  icon.border:SetPoint("BOTTOMRIGHT",icon,"BOTTOMRIGHT",1,-1)
   icon.border:SetTexture("Interface/SPELLBOOK/GuildSpellbooktabIconFrame")
   icon.border:Hide()
   icon.cooldown = CreateFrame("Cooldown",nil,icon,"CooldownFrameTemplate")
   icon.cooldown:SetHideCountdownNumbers(false)
   icon.cooldown:SetAllPoints(icon)
   icon:ClearAllPoints()
-  icon:SetPoint("TOPRIGHT",nameplate,"BOTTOMLEFT",-5,-5)
+  icon:SetPoint(opt.anchorFrom,nameplate,opt.anchorTo,opt.offsetX,opt.offsetY)
   icon:Hide()
   return icon
 end
@@ -156,7 +171,7 @@ local function updateNameplateIcon(icon,pickpocketTime)
     else
       icon.cooldown:Clear()
     end
-    if delta <=180+30 then
+    if delta <=210 then
       icon.border:SetVertexColor(0.9,0,0,1)
     elseif delta <= 480 then
       icon.border:SetVertexColor(0.9,0.9,0,1)
@@ -181,14 +196,16 @@ local function parseLootSources(slot)
 end
 
 local function addToSpellTooltip(self,data)
+  local opt = Cutpurse_DBPC
+  if not opt.spell then return end
   local self = self or GameTooltip
   local _, spell = self:GetSpell()
   if spell and spell == PICKPOCKET then
     local addition
-    if Cutpurse_DBPC.money > 0 then
+    if Cutpurse_DBPC.money > 0 and opt.spellCoin then
       addition = GetMoneyString(Cutpurse_DBPC.money)
     end
-    if Cutpurse_DBPC.vendor > 0 then
+    if Cutpurse_DBPC.vendor > 0 and opt.spellVendor then
       addition = string.format(VENDOR_LABEL,addition or "",GetMoneyString(Cutpurse_DBPC.vendor))
     end
     if addition then
@@ -221,6 +238,8 @@ local function updateTooltipGUIDTimer(self)
 end
 
 local function addToUnitTooltip(self,data)
+  local opt = Cutpurse_DBPC
+  if not opt.unitTooltip then return end
   local self = self or GameTooltip
   local _, unit = self:GetUnit()
   local unitGUID = unit and UnitGUID(unit)
@@ -248,6 +267,8 @@ local function addToUnitTooltip(self,data)
 end
 
 local function processNameplate(nameplate)
+  local opt = Cutpurse_DBPC
+  if not opt.showIcon then return end
   local unitToken = nameplate and nameplate.namePlateUnitToken
   local unitGUID = unitToken and UnitGUID(unitToken)
   local pickpocketTime = unitGUID and addon.pickpocketed[unitGUID]
@@ -267,6 +288,198 @@ local function DoNameplates()
       processNameplate(nameplate)
     end
   end
+end
+
+function addon.OnSettingChanged(setting,value)
+
+end
+
+function addon:createSettings()
+  addon._category = Settings.RegisterVerticalLayoutCategory(addonName)
+  local variableTable = Cutpurse_DBPC
+  do
+    local name = "Show Nameplate Icon"
+    local variable = "showIcon"
+    local variableKey = "showIcon"
+    local defaultValue = true
+    local setting = Settings.RegisterAddOnSetting(addon._category, variable, variableKey, variableTable, type(defaultValue), name, defaultValue)
+    setting:SetValueChangedCallback(addon.OnSettingChanged)
+    local tooltip = "Show a nameplate icon with estimated pockets respawn time"
+    Settings.CreateCheckbox(addon._category, setting, tooltip)
+  end
+  do
+    local name = "Icon Size"
+    local variable = "iconSize"
+    local variableKey = "iconSize"
+    local defaultValue = 20
+    local minValue = 12
+    local maxValue = 36
+    local step = 2
+    local function GetValue()
+      return variableTable.iconSize or defaultValue
+    end
+    local function SetValue(value)
+      variableTable.iconSize = value
+    end
+    local setting = Settings.RegisterProxySetting(addon._category, variable, type(defaultValue), name, defaultValue, GetValue, SetValue)
+    setting:SetValueChangedCallback(addon.OnSettingChanged)
+    local tooltip = "Nameplate icon size"
+    local options = Settings.CreateSliderOptions(minValue, maxValue, step)
+    options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
+    Settings.CreateSlider(addon._category, setting, options, tooltip)
+  end
+  do
+    local name = "Icon Anchor From"
+    local variable = "anchorFrom"
+    local variableKey = "anchorFrom"
+    local defaultValue = 1
+    local values = {"TOPRIGHT","TOP","TOPLEFT"}
+    local function GetValue()
+      return tIndexOf(values,(variableTable.anchorFrom or defaultValue))
+    end
+    local function SetValue(value)
+      variableTable.anchorFrom = values[value]
+    end
+    local function GetOptions()
+      local container = Settings.CreateControlTextContainer()
+      container:Add(1,"TOPRIGHT")
+      container:Add(2,"TOP")
+      container:Add(3,"TOPLEFT")
+      return container:GetData()
+    end
+    local setting = Settings.RegisterProxySetting(addon._category, variable, type(defaultValue), name, defaultValue, GetValue, SetValue)
+    setting:SetValueChangedCallback(addon.OnSettingChanged)
+    local tooltip = "Set the attachement point from Icon"
+    Settings.CreateDropdown(addon._category, setting, GetOptions, tooltip)
+  end
+  do
+    local name = "Icon Anchor To"
+    local variable = "anchorTo"
+    local variableKey = "anchorTo"
+    local defaultValue = 1
+    local values = {"BOTTOMLEFT","BOTTOM","BOTTOMRIGHT"}
+    local function GetValue()
+      return tIndexOf(values,(variableTable.anchorTo or defaultValue))
+    end
+    local function SetValue(value)
+      variableTable.anchorTo = values[value]
+    end
+    local function GetOptions()
+      local container = Settings.CreateControlTextContainer()
+      container:Add(1,"BOTTOMLEFT")
+      container:Add(2,"BOTTOM")
+      container:Add(3,"BOTTOMRIGHT")
+      return container:GetData()
+    end
+    local setting = Settings.RegisterProxySetting(addon._category, variable, type(defaultValue), name, defaultValue, GetValue, SetValue)
+    setting:SetValueChangedCallback(addon.OnSettingChanged)
+    local tooltip = "Set the attachement point to Nameplate"
+    Settings.CreateDropdown(addon._category, setting, GetOptions, tooltip)
+  end
+  do
+    local name = "Icon X Offset"
+    local variable = "offsetX"
+    local variableKey = "offsetX"
+    local defaultValue = -5
+    local minValue = -10
+    local maxValue = 10
+    local step = 1
+    local function GetValue()
+      return variableTable.offsetX or defaultValue
+    end
+    local function SetValue(value)
+      variableTable.offsetX = value
+    end
+    local setting = Settings.RegisterProxySetting(addon._category, variable, type(defaultValue), name, defaultValue, GetValue, SetValue)
+    setting:SetValueChangedCallback(addon.OnSettingChanged)
+    local tooltip = "Icon Horizontal Offset, positive is right, negative left"
+    local options = Settings.CreateSliderOptions(minValue, maxValue, step)
+    options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
+    Settings.CreateSlider(addon._category, setting, options, tooltip)
+  end
+  do
+    local name = "Icon Y Offset"
+    local variable = "offsetY"
+    local variableKey = "offsetY"
+    local defaultValue = -5
+    local minValue = -10
+    local maxValue = 10
+    local step = 1
+    local function GetValue()
+      return variableTable.offsetY or defaultValue
+    end
+    local function SetValue(value)
+      variableTable.offsetY = value
+    end
+    local setting = Settings.RegisterProxySetting(addon._category, variable, type(defaultValue), name, defaultValue, GetValue, SetValue)
+    setting:SetValueChangedCallback(addon.OnSettingChanged)
+    local tooltip = "Icon Vertical Offset, positive is up, negative down"
+    local options = Settings.CreateSliderOptions(minValue, maxValue, step)
+    options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
+    Settings.CreateSlider(addon._category, setting, options, tooltip)
+  end
+  do
+    local name = "Modify Unit Tooltip"
+    local variable = "unitTooltip"
+    local variableKey = "unitTooltip"
+    local defaultValue = true
+    local setting = Settings.RegisterAddOnSetting(addon._category, variable, variableKey, variableTable, type(defaultValue), name, defaultValue)
+    setting:SetValueChangedCallback(addon.OnSettingChanged)
+    local tooltip = "Add time since pickpocketed to Unit Tooltip"
+    Settings.CreateCheckbox(addon._category, setting, tooltip)
+  end
+  do
+    local name = "Loot Messages"
+    local variable = "lootMessage"
+    local variableKey = "lootMessage"
+    local defaultValue = true
+    local setting = Settings.RegisterAddOnSetting(addon._category, variable, variableKey, variableTable, type(defaultValue), name, defaultValue)
+    setting:SetValueChangedCallback(addon.OnSettingChanged)
+    local tooltip = "Echo pickpocketed Loot on Screen"
+    Settings.CreateCheckbox(addon._category, setting, tooltip)
+  end
+  do
+    local name = "Modify Spell Tooltip"
+    local variable = "spell"
+    local variableKey = "spell"
+    local defaultValue = true
+    local setting = Settings.RegisterAddOnSetting(addon._category, variable, variableKey, variableTable, type(defaultValue), name, defaultValue)
+    setting:SetValueChangedCallback(addon.OnSettingChanged)
+    local tooltip = "Add extra information to the "..PPNAME.." tooltip"
+    Settings.CreateCheckbox(addon._category, setting, tooltip)
+  end
+  do
+    local name = "Add Coin to Spell Tooltip"
+    local variable = "spellCoin"
+    local variableKey = "spellCoin"
+    local defaultValue = true
+    local setting = Settings.RegisterAddOnSetting(addon._category, variable, variableKey, variableTable, type(defaultValue), name, defaultValue)
+    setting:SetValueChangedCallback(addon.OnSettingChanged)
+    local tooltip = "Add coin from "..PPNAME.." to spell tooltip"
+    Settings.CreateCheckbox(addon._category, setting, tooltip)
+  end
+  do
+    local name = "Add Vendor Price to Spell Tooltip"
+    local variable = "spellVendor"
+    local variableKey = "spellVendor"
+    local defaultValue = true
+    local setting = Settings.RegisterAddOnSetting(addon._category, variable, variableKey, variableTable, type(defaultValue), name, defaultValue)
+    setting:SetValueChangedCallback(addon.OnSettingChanged)
+    local tooltip = "Add vendor value to the "..PPNAME.." tooltip"
+    Settings.CreateCheckbox(addon._category, setting, tooltip)
+  end
+  do
+    local name = "Add GPH to Spell Tooltip"
+    local variable = "spellGPH"
+    local variableKey = "spellGPH"
+    local defaultValue = true
+    local setting = Settings.RegisterAddOnSetting(addon._category, variable, variableKey, variableTable, type(defaultValue), name, defaultValue)
+    setting:SetValueChangedCallback(addon.OnSettingChanged)
+    local tooltip = "Add Gold Per Hour to the "..PPNAME.." tooltip"
+    Settings.CreateCheckbox(addon._category, setting, tooltip)
+  end
+
+  Settings.RegisterAddOnCategory(addon._category)
 end
 
 function addon:Print(msg,useLabel)
@@ -313,6 +526,7 @@ function addon:ADDON_LOADED(_,...)
         Cutpurse_DB[k] = v
       end
     end
+    self:createSettings()
   end
 end
 
@@ -389,6 +603,7 @@ function addon:LOOT_READY(_,...)
 end
 
 function addon:LOOT_SLOT_CLEARED(_,...)
+  local opt = Cutpurse_DBPC
   local slot = ...
   local slotdata = self.slots[slot]
   if slotdata then
@@ -409,8 +624,10 @@ function addon:LOOT_SLOT_CLEARED(_,...)
       if lootType == "money" then
         Cutpurse_DBPC.money = Cutpurse_DBPC.money + amount
         addToHistory("money",amount)
-        local lootMsg = GetMoneyString(amount)
-        RaidNotice_AddMessage(RaidBossEmoteFrame, lootMsg, ChatTypeInfo.SYSTEM, 4.0)
+        if opt.lootMessage then
+          local lootMsg = GetMoneyString(amount)
+          RaidNotice_AddMessage(RaidBossEmoteFrame, lootMsg, ChatTypeInfo.SYSTEM, 4.0)
+        end
       end
       if lootType == "item" then
         local itemAsync = Item:CreateFromItemLink(loot)
@@ -423,8 +640,10 @@ function addon:LOOT_SLOT_CLEARED(_,...)
           else
             Cutpurse_DBPC.loot[loot] = amount
           end
-          local lootMsg = string.format("%s x%d",itemAsync:GetItemLink(),amount or 1)
-          RaidNotice_AddMessage(RaidBossEmoteFrame, lootMsg, ChatTypeInfo.SYSTEM, 4.0)
+          if opt.lootMessage then
+            local lootMsg = string.format("%s x%d",itemAsync:GetItemLink(),amount or 1)
+            RaidNotice_AddMessage(RaidBossEmoteFrame, lootMsg, ChatTypeInfo.SYSTEM, 4.0)
+          end
         end)
       end
       if not addon.firstPick then
@@ -516,9 +735,14 @@ SlashCmdList[addonNameU] = function(msg, input)
     addon:Print("    prints a list of pickable NPCs")
     addon:Print("/"..addonNameL.." nopick")
     addon:Print("    prints a list of NPCs without pockets")
+    addon:Print("/"..addonNameL.." options")
+    addon:Print("    opens configuration")
     return
   end
   local cmd = option[1]
+  if cmd == "options" or cmd == "opt" then
+    Settings.OpenToCategory(addon._category:GetID())
+  end
   if cmd == "report" then
     if table_count(Cutpurse_DBPC.loot) > 0 then
       addon:Print("Items",true)
@@ -559,15 +783,3 @@ SlashCmdList[addonNameU] = function(msg, input)
 end
 _G["SLASH_"..addonNameU.."1"] = "/"..addonNameL
 
---[[TODO
-0  Maybe rename the addon to `Cutpurse`
-1. Option to scrolling message or alert loot
-2. Option to add last pickpocket time to mob tooltip/nameplate (maybe icon too?)
-3. Option to add short summary to Pick Pocket Spell Tooltip (just session/total, maybe g/hour)
-4. Detail Frame with breakdown of spoils
- - money / hour: counted from first pickpocket to last
- - daily
- - lifetime
-5. Learn from pickpocketing by npcid to show indicator for pickpocket-able mobs
-6. Compute GPH
-]]

@@ -3,7 +3,7 @@
 ## Notes: Tracks your gains from Pick Pocketing and helps you find erm... donors
 ## IconTexture: 133644
 ## Author: Roadblock
-## Version: 0.5
+## Version: 0.9
 ## SavedVariablesPerCharacter: Cutpurse_DBPC
 ## SavedVariables: Cutpurse_DB
 
